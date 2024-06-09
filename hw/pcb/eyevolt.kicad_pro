@@ -495,7 +495,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "eyevolt.net",
-      "plot": "",
+      "plot": "voltage-follower-v1.0-gerbers-for-FAB",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
