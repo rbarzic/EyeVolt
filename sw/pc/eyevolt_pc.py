@@ -4,14 +4,56 @@ import asyncio
 import logging
 
 import serial_asyncio
-from textual.app import App
-from textual.widgets import Label
+from textual.app import App, ComposeResult
+from textual.containers import Vertical
+from textual.widget import Widget
+from textual.widgets import Label, ProgressBar
+
+
+class VoltageDisplay(Widget):
+    """
+    Composite widget to display a voltage reading along with a progress bar.
+    The widget displays a static text (prefix) and the current voltage value,
+    then below shows a progress bar representing the voltage as a percentage
+    of its maximum (3.3 for channels 1-8, 6.6 for channels 9-12).
+    """
+
+    def __init__(self, static_text: str, index: int, **kwargs) -> None:
+        """
+        :param static_text: The text label (prefix) for the field.
+        :param index: The zero-based channel index.
+        """
+        super().__init__(**kwargs)
+        self.static_text = static_text
+        self.index = index
+
+    def compose(self) -> ComposeResult:
+        # Create a vertical container with a Label and a ProgressBar.
+        yield Vertical(
+            Label(f"{self.static_text}: 0.00", id=f"label_{self.index}"),
+            ProgressBar(total=100, id=f"progress_{self.index}")
+        )
+
+    def update_value(self, new_value: float):
+        """
+        Update the text and progress bar for this field.
+        :param new_value: The new voltage reading.
+        """
+        # Determine maximum voltage based on channel index.
+        max_val = 3.3 if self.index < 8 else 6.6
+        # Compute percentage (0 to 100).
+        pct = int(new_value / max_val * 100)
+        # Update the label with the formatted voltage value.
+        self.query_one(f"#label_{self.index}", Label).update(f"{self.static_text}: {new_value:.2f}")
+        # Update the progress bar by setting its 'progress' property.
+        bar: ProgressBar = self.query_one(f"#progress_{self.index}", ProgressBar)
+        bar.progress = pct
 
 
 class SerialProtocol(asyncio.Protocol):
     """
-    Protocol to handle asynchronous serial reading.
-    It expects lines starting with "1::" (8 values) or "2::" (4 values),
+    Protocol for asynchronous serial reading.
+    Expects lines starting with "1::" (8 values) or "2::" (4 values),
     with each value represented as an ASCII decimal integer.
     """
 
@@ -36,9 +78,8 @@ class SerialProtocol(asyncio.Protocol):
             self.process_line(line)
 
     def process_line(self, line: str):
-        # Process the incoming line by header type.
         if line.startswith("1::"):
-            # For header "1::": expect 8 integers.
+            # Parse header "1::": expect 8 integers.
             parts = line[3:].strip().split()
             if len(parts) != 8:
                 self.app.log(f"Unexpected number of values in header 1: {parts}")
@@ -48,13 +89,12 @@ class SerialProtocol(asyncio.Protocol):
             except ValueError:
                 self.app.log("Header 1: one of the values is not an integer.")
                 return
-            # Convert raw int (0–65536) to float in range 0–3.3.
+            # Convert raw integer (0–65536) to voltage in range 0–3.3.
             conv_values = [raw / 65536.0 * 3.3 for raw in raw_values]
-            # Update UI for channels 1–8 (indices 0–7).
             self.app.update_values(list(range(0, 8)), conv_values)
 
         elif line.startswith("2::"):
-            # For header "2::": expect 4 integers.
+            # Parse header "2::": expect 4 integers.
             parts = line[3:].strip().split()
             if len(parts) != 4:
                 self.app.log(f"Unexpected number of values in header 2: {parts}")
@@ -64,24 +104,20 @@ class SerialProtocol(asyncio.Protocol):
             except ValueError:
                 self.app.log("Header 2: one of the values is not an integer.")
                 return
-            # Convert raw int (0–65536) to float in range 0–6.6.
+            # Convert raw integer (0–65536) to voltage in range 0–6.6.
             conv_values = [raw / 65536.0 * 6.6 for raw in raw_values]
-            # Update UI for channels 9–12 (indices 8–11).
             self.app.update_values(list(range(8, 12)), conv_values)
+
         else:
             self.app.log(f"Unrecognized data: {line}")
 
 
 class SerialTUI(App):
     """
-    A Textual TUI application that displays 12 numeric fields.
-    The values are arranged in a 3-column grid (each column with 4 rows):
-      - Column 1: channels 1–4
-      - Column 2: channels 5–8
-      - Column 3: channels 9–12
-
-    Each field displays a static label (by default "Value#") followed by the current value.
-    The static text can be overridden via command-line options.
+    A Textual TUI application that displays 12 voltage fields.
+    The fields are arranged in a grid of 3 columns by 4 rows.
+    Each field shows a static label and the measured voltage,
+    with a progress bar below for visual representation.
     """
 
     CSS = """
@@ -90,40 +126,34 @@ class SerialTUI(App):
         grid-size: 3 4;
         align: center middle;
     }
-    Label {
-        margin: 1;
-    }
     """
 
     def __init__(self, serial_port: str, static_texts: list[str], **kwargs):
         """
         :param serial_port: The serial port to open.
-        :param static_texts: A list of 12 strings containing the static text for each field.
+        :param static_texts: A list of 12 static texts (one per channel).
         """
         super().__init__(**kwargs)
         self.serial_port = serial_port
+        self.static_texts = static_texts
         self.current_values = [0.0] * 12
-        self.static_texts = static_texts  # List of 12 strings, one per field.
-        self.labels = []  # Will be populated in compose().
+        self.displays = []  # List of VoltageDisplay widgets.
 
-    def compose(self):
-        # Create 12 Label widgets, each showing "StaticText: 0.00"
+    def compose(self) -> ComposeResult:
+        # Yield 12 VoltageDisplay widgets.
         for i in range(12):
-            label_text = f"{self.static_texts[i]}: 0.00"
-            yield Label(label_text, id=f"label_{i}")
+            yield VoltageDisplay(self.static_texts[i], i, id=f"voltage_{i}")
 
     async def on_mount(self) -> None:
         self.log(f"Mounting TUI with serial port: {self.serial_port}")
-        # Retrieve references to the Label widgets by their IDs.
-        self.labels = [self.query_one(f"#label_{i}", Label) for i in range(12)]
-        # Start the serial port reading task.
+        self.displays = [self.query_one(f"#voltage_{i}", VoltageDisplay) for i in range(12)]
+        # Start the asynchronous serial reading task.
         asyncio.create_task(self.read_serial())
 
     async def read_serial(self):
         loop = asyncio.get_running_loop()
         self.log("Opening serial connection...")
         try:
-            # Create the serial connection using serial_asyncio.
             transport, protocol = await serial_asyncio.create_serial_connection(
                 loop,
                 lambda: SerialProtocol(self),
@@ -135,22 +165,16 @@ class SerialTUI(App):
             self.log(f"Failed to open serial port: {e}")
 
     def update_values(self, indices, new_values):
-        """
-        Update the displayed values on the labels.
-        :param indices: List of indices of the labels to update.
-        :param new_values: List of new float values (already converted and scaled).
-        """
         for idx, val in zip(indices, new_values):
             self.current_values[idx] = val
-            # Update each label to include its static prefix and its current value.
-            self.labels[idx].update(f"{self.static_texts[idx]}: {val:.2f}")
+            self.displays[idx].update_value(val)
         self.refresh()
 
 
 def parse_text_options(text_option: str) -> dict:
     """
-    Parse a comma-separated list of key=value pairs into a dictionary.
-    Expected keys are of the form "val#" where # is the zero-based field index.
+    Parse comma-separated key=value pairs into a dictionary.
+    Expected keys use the format "val#" where # is the zero-based index.
     For example: "val0=NewText1,val3=NewText4"
     """
     mapping = {}
@@ -164,9 +188,8 @@ def parse_text_options(text_option: str) -> dict:
 
 
 def main():
-    # Process command-line arguments.
     parser = argparse.ArgumentParser(
-        description="TUI application that reads 12 integer values via serial and displays them."
+        description="TUI application that reads 12 integer values via serial and displays them with progress bars."
     )
     parser.add_argument("port", help="Path to the serial port (e.g. /dev/ttyUSB0 or COM3)")
     parser.add_argument(
@@ -177,9 +200,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # Create default static texts for 12 fields: "Value1", "Value2", ..., "Value12"
+    # Set default static texts "Value1" to "Value12".
     default_texts = [f"Value{i+1}" for i in range(12)]
-    # Parse --text option
     text_overrides = parse_text_options(args.text)
     for key, new_text in text_overrides.items():
         if key.startswith("val"):
@@ -188,13 +210,9 @@ def main():
                 if 0 <= idx < 12:
                     default_texts[idx] = new_text
             except ValueError:
-                # Skip invalid keys
                 pass
 
-    # Enable logging (Textual will output detailed logs in development mode).
     logging.basicConfig(level=logging.DEBUG)
-
-    # Create and run the Textual app.
     app = SerialTUI(serial_port=args.port, static_texts=default_texts)
     app.title = "Serial Port TUI"
     app.run()
