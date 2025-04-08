@@ -10,51 +10,67 @@ from textual.widget import Widget
 from textual.widgets import Label, ProgressBar
 
 
+def get_color(value: float) -> str:
+    """
+    Returns a color value based on the given voltage.
+    - below 0.5: white
+    - between 0.5 and 0.8: yellow
+    - between 0.8 and 1.2: light green (#66FF66)
+    - above 1.2: light red (#FF6666)
+    """
+    if value < 0.5:
+        return "white"
+    elif value < 0.8:
+        return "yellow"
+    elif value < 1.2:
+        return "#66FF66"
+    else:
+        return "#FF6666"
+
+
 class VoltageDisplay(Widget):
     """
-    Composite widget to display a voltage reading along with a progress bar.
-    The widget displays a static text (prefix) and the current voltage value,
-    then below shows a progress bar representing the voltage as a percentage
-    of its maximum (3.3 for channels 1-8, 6.6 for channels 9-12).
+    A composite widget to display a voltage reading with a progress bar.
+    It shows a static text (prefix) and a numerical value (styled in bold and colored),
+    followed by a progress bar below.
+    If the channel is disabled, the value is replaced by "----" and the bar is cleared.
     """
 
-    def __init__(self, static_text: str, index: int, **kwargs) -> None:
-        """
-        :param static_text: The text label (prefix) for the field.
-        :param index: The zero-based channel index.
-        """
+    def __init__(self, static_text: str, index: int, enabled: bool = True, **kwargs) -> None:
         super().__init__(**kwargs)
         self.static_text = static_text
         self.index = index
+        self.enabled = enabled
 
     def compose(self) -> ComposeResult:
-        # Create a vertical container with a Label and a ProgressBar.
         yield Vertical(
             Label(f"{self.static_text}: 0.00", id=f"label_{self.index}"),
             ProgressBar(total=100, id=f"progress_{self.index}")
         )
 
     def update_value(self, new_value: float):
-        """
-        Update the text and progress bar for this field.
-        :param new_value: The new voltage reading.
-        """
-        # Determine maximum voltage based on channel index.
+        label = self.query_one(f"#label_{self.index}", Label)
+        progress_bar = self.query_one(f"#progress_{self.index}", ProgressBar)
+        # If channel is disabled, display placeholder and clear progress.
+        if not self.enabled:
+            label.update(f"{self.static_text}: ----")
+            progress_bar.progress = 0
+            progress_bar.styles.bar_color = "grey"
+            return
+
         max_val = 3.3 if self.index < 8 else 6.6
-        # Compute percentage (0 to 100).
         pct = int(new_value / max_val * 100)
-        # Update the label with the formatted voltage value.
-        self.query_one(f"#label_{self.index}", Label).update(f"{self.static_text}: {new_value:.2f}")
-        # Update the progress bar by setting its 'progress' property.
-        bar: ProgressBar = self.query_one(f"#progress_{self.index}", ProgressBar)
-        bar.progress = pct
+        color = get_color(new_value)
+        # Update label: static text is unstyled; only the numerical value is bold with color.
+        label.update(f"{self.static_text}: " + f"[bold][{color}]{new_value:.2f}[/{color}][/bold]")
+        progress_bar.progress = pct
+        progress_bar.styles.bar_color = color
 
 
 class SerialProtocol(asyncio.Protocol):
     """
     Protocol for asynchronous serial reading.
-    Expects lines starting with "1::" (8 values) or "2::" (4 values),
-    with each value represented as an ASCII decimal integer.
+    Expects lines beginning with "1::" (8 values) or "2::" (4 values) as ASCII decimal integers.
     """
 
     def __init__(self, tui_app: "SerialTUI"):
@@ -66,7 +82,6 @@ class SerialProtocol(asyncio.Protocol):
         self.app.log("Serial connection established.")
 
     def data_received(self, data: bytes):
-        # Accumulate data until a newline is received.
         self.buffer.extend(data)
         while b"\n" in self.buffer:
             line, sep, self.buffer = self.buffer.partition(b"\n")
@@ -79,7 +94,6 @@ class SerialProtocol(asyncio.Protocol):
 
     def process_line(self, line: str):
         if line.startswith("1::"):
-            # Parse header "1::": expect 8 integers.
             parts = line[3:].strip().split()
             if len(parts) != 8:
                 self.app.log(f"Unexpected number of values in header 1: {parts}")
@@ -89,12 +103,9 @@ class SerialProtocol(asyncio.Protocol):
             except ValueError:
                 self.app.log("Header 1: one of the values is not an integer.")
                 return
-            # Convert raw integer (0–65536) to voltage in range 0–3.3.
             conv_values = [raw / 65536.0 * 3.3 for raw in raw_values]
             self.app.update_values(list(range(0, 8)), conv_values)
-
         elif line.startswith("2::"):
-            # Parse header "2::": expect 4 integers.
             parts = line[3:].strip().split()
             if len(parts) != 4:
                 self.app.log(f"Unexpected number of values in header 2: {parts}")
@@ -104,20 +115,17 @@ class SerialProtocol(asyncio.Protocol):
             except ValueError:
                 self.app.log("Header 2: one of the values is not an integer.")
                 return
-            # Convert raw integer (0–65536) to voltage in range 0–6.6.
             conv_values = [raw / 65536.0 * 6.6 for raw in raw_values]
             self.app.update_values(list(range(8, 12)), conv_values)
-
         else:
             self.app.log(f"Unrecognized data: {line}")
 
 
 class SerialTUI(App):
     """
-    A Textual TUI application that displays 12 voltage fields.
-    The fields are arranged in a grid of 3 columns by 4 rows.
-    Each field shows a static label and the measured voltage,
-    with a progress bar below for visual representation.
+    A TUI application that displays 12 voltage fields in a 3×4 grid.
+    Each field shows a static label, a numerical voltage value (styled with bold and color),
+    and a progress bar. Individual channels may be disabled via command-line options.
     """
 
     CSS = """
@@ -128,26 +136,26 @@ class SerialTUI(App):
     }
     """
 
-    def __init__(self, serial_port: str, static_texts: list[str], **kwargs):
-        """
-        :param serial_port: The serial port to open.
-        :param static_texts: A list of 12 static texts (one per channel).
-        """
+    def __init__(self, serial_port: str, static_texts: list[str], channel_config: list[bool], **kwargs):
         super().__init__(**kwargs)
         self.serial_port = serial_port
         self.static_texts = static_texts
+        self.channel_config = channel_config
         self.current_values = [0.0] * 12
-        self.displays = []  # List of VoltageDisplay widgets.
+        self.displays = []
 
     def compose(self) -> ComposeResult:
-        # Yield 12 VoltageDisplay widgets.
         for i in range(12):
-            yield VoltageDisplay(self.static_texts[i], i, id=f"voltage_{i}")
+            yield VoltageDisplay(
+                self.static_texts[i],
+                i,
+                enabled=self.channel_config[i],
+                id=f"voltage_{i}"
+            )
 
     async def on_mount(self) -> None:
         self.log(f"Mounting TUI with serial port: {self.serial_port}")
         self.displays = [self.query_one(f"#voltage_{i}", VoltageDisplay) for i in range(12)]
-        # Start the asynchronous serial reading task.
         asyncio.create_task(self.read_serial())
 
     async def read_serial(self):
@@ -158,7 +166,7 @@ class SerialTUI(App):
                 loop,
                 lambda: SerialProtocol(self),
                 self.serial_port,
-                baudrate=9600,  # Adjust baudrate as needed.
+                baudrate=9600,
             )
             self.log("Serial connection running.")
         except Exception as e:
@@ -172,18 +180,22 @@ class SerialTUI(App):
 
 
 def parse_text_options(text_option: str) -> dict:
-    """
-    Parse comma-separated key=value pairs into a dictionary.
-    Expected keys use the format "val#" where # is the zero-based index.
-    For example: "val0=NewText1,val3=NewText4"
-    """
     mapping = {}
     if text_option:
-        pairs = text_option.split(",")
-        for pair in pairs:
+        for pair in text_option.split(","):
             if "=" in pair:
                 key, value = pair.split("=", 1)
                 mapping[key.strip()] = value.strip()
+    return mapping
+
+
+def parse_channel_options(channel_option: str) -> dict:
+    mapping = {}
+    if channel_option:
+        for pair in channel_option.split(","):
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                mapping[key.strip()] = value.strip().lower()
     return mapping
 
 
@@ -198,9 +210,15 @@ def main():
              "Expected key format is 'val#' (zero-based), e.g., --text val0=NewText1,val3=NewText4",
         default="",
     )
+    parser.add_argument(
+        "--channel",
+        help="Comma-separated key=value pairs to enable/disable channels. "
+             "Expected key format is 'val#' (zero-based), e.g., --channel val0=off,val3=off,val4=on. "
+             "Channels not listed are 'on' by default.",
+        default="",
+    )
     args = parser.parse_args()
 
-    # Set default static texts "Value1" to "Value12".
     default_texts = [f"Value{i+1}" for i in range(12)]
     text_overrides = parse_text_options(args.text)
     for key, new_text in text_overrides.items():
@@ -212,8 +230,19 @@ def main():
             except ValueError:
                 pass
 
+    channel_flags = [True] * 12
+    channel_overrides = parse_channel_options(args.channel)
+    for key, status in channel_overrides.items():
+        if key.startswith("val"):
+            try:
+                idx = int(key[3:])
+                if 0 <= idx < 12:
+                    channel_flags[idx] = (status != "off")
+            except ValueError:
+                pass
+
     logging.basicConfig(level=logging.DEBUG)
-    app = SerialTUI(serial_port=args.port, static_texts=default_texts)
+    app = SerialTUI(serial_port=args.port, static_texts=default_texts, channel_config=channel_flags)
     app.title = "Serial Port TUI"
     app.run()
 
