@@ -94,7 +94,8 @@ class VoltageDisplay(Widget):
         # Limit the history to the most recent 'history_limit' samples.
         if len(self.history) > self.history_limit:
             self.history.pop(0)
-        sparkline.data = self.history
+        # Include 0 and 100 in data so sparkline uses absolute 0-100% scale
+        sparkline.data = [0, 100] + self.history
         sparkline.refresh()
 
 
