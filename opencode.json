@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "kicad": {
+      "type": "local",
+      "command": ["node", "/home/roba/perso/github/KiCAD-MCP-Server/dist/index.js"],
+      "environment": {
+        "NODE_ENV": "production",
+        "LOG_LEVEL": "info",
+        "KICAD_AUTO_LAUNCH": "false",
+        "KICAD_MCP_DEV": "0",
+        "KICAD_PYTHON": "/home/roba/.virtualenvs/eyevolt/bin/python3",
+        "PYTHONPATH": "/usr/lib/python3/dist-packages"
+      },
+      "enabled": true,
+      "timeout": 30000
+    }
+  }
+}
