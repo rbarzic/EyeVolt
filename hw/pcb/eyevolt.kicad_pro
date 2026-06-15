@@ -254,7 +254,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": ""
+      "sch_revision": "1.0"
     },
     "layer_pairs": [],
     "layer_presets": [],
@@ -680,7 +680,7 @@
       {
         "filename": "eyevolt.kicad_sch",
         "name": "eyevolt",
-        "uuid": "00000000-0000-0000-0000-000000000000"
+        "uuid": "fd3b9478-a9e4-4492-ac62-86a2b5ab0c43"
       }
     ],
     "used_designators": "",
@@ -689,7 +689,7 @@
   "sheets": [
     [
       "fd3b9478-a9e4-4492-ac62-86a2b5ab0c43",
-      "Root"
+      "eyevolt"
     ]
   ],
   "text_variables": {},
