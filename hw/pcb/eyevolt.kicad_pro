@@ -65,7 +65,7 @@
           "min_thickness": 0.25,
           "pad_connection": 1,
           "remove_islands": 0,
-          "thermal_relief_gap": 0.5,
+          "thermal_relief_gap": 0.2,
           "thermal_relief_spoke_width": 0.5
         }
       },
@@ -683,7 +683,7 @@
         "uuid": "fd3b9478-a9e4-4492-ac62-86a2b5ab0c43"
       }
     ],
-    "used_designators": "",
+    "used_designators": "U1-16,R1-48,J1-2,H1-4,C1-47,#PWR1-40",
     "variants": []
   },
   "sheets": [
