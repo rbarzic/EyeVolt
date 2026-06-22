@@ -65,7 +65,7 @@
           "min_thickness": 0.25,
           "pad_connection": 1,
           "remove_islands": 0,
-          "thermal_relief_gap": 0.5,
+          "thermal_relief_gap": 0.2,
           "thermal_relief_spoke_width": 0.5
         }
       },
@@ -86,7 +86,7 @@
         "connection_width": "warning",
         "copper_edge_clearance": "error",
         "copper_sliver": "warning",
-        "courtyards_overlap": "error",
+        "courtyards_overlap": "ignore",
         "creepage": "error",
         "diff_pair_gap_out_of_range": "error",
         "diff_pair_uncoupled_length_too_long": "error",
@@ -108,7 +108,7 @@
         "items_not_allowed": "error",
         "length_out_of_range": "error",
         "lib_footprint_issues": "warning",
-        "lib_footprint_mismatch": "warning",
+        "lib_footprint_mismatch": "ignore",
         "malformed_courtyard": "error",
         "microvia_drill_out_of_range": "error",
         "mirrored_text_on_front_layer": "warning",
@@ -211,7 +211,11 @@
         }
       ],
       "track_widths": [
-        0.0
+        0.0,
+        0.2,
+        0.3,
+        0.4,
+        0.5
       ],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
@@ -243,6 +247,10 @@
         {
           "diameter": 0.0,
           "drill": 0.0
+        },
+        {
+          "diameter": 0.6,
+          "drill": 0.3
         }
       ],
       "zones_allow_external_fillets": false
@@ -254,7 +262,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": ""
+      "sch_revision": "1.0"
     },
     "layer_pairs": [],
     "layer_presets": [],
@@ -680,7 +688,7 @@
       {
         "filename": "eyevolt.kicad_sch",
         "name": "eyevolt",
-        "uuid": "00000000-0000-0000-0000-000000000000"
+        "uuid": "fd3b9478-a9e4-4492-ac62-86a2b5ab0c43"
       }
     ],
     "used_designators": "",
@@ -689,7 +697,7 @@
   "sheets": [
     [
       "fd3b9478-a9e4-4492-ac62-86a2b5ab0c43",
-      "Root"
+      "eyevolt"
     ]
   ],
   "text_variables": {},
