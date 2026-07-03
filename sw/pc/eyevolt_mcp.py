@@ -76,6 +76,32 @@ class VoltageDisplay(Widget):
         sparkline.refresh()
 
 
+class DacDisplay(Widget):
+    """Compact DAC readback: a single live label (no graph / progress bar)."""
+
+    DEFAULT_CSS = """
+    DacDisplay {
+        height: 1;
+        padding: 0 1;
+        content-align: center middle;
+    }
+    """
+
+    def __init__(self, label_text: str, index: int, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.label_text = label_text
+        self.index = index
+
+    def compose(self) -> ComposeResult:
+        yield Label(f"{self.label_text}: 0.00", id=f"dac_label_{self.index}")
+
+    def update_value(self, voltage: float) -> None:
+        color = get_color(voltage)
+        self.query_one(f"#dac_label_{self.index}", Label).update(
+            f"{self.label_text}: [bold][{color}]{voltage:.2f}[/{color}][/bold]"
+        )
+
+
 class SerialProtocol(asyncio.Protocol):
     def __init__(self, tui_app: "SerialTUI"):
         self.app = tui_app
@@ -121,6 +147,18 @@ class SerialProtocol(asyncio.Protocol):
                 return
             conv_values = [raw / 65536.0 * 6.6 for raw in raw_values]
             self.app.update_values(list(range(8, 12)), conv_values)
+        elif line.startswith("3::"):
+            parts = line[3:].strip().split()
+            if len(parts) != 8:
+                self.app.log(f"Unexpected number of values in header 3: {parts}")
+                return
+            try:
+                raw_values = [int(part) for part in parts]
+            except ValueError:
+                self.app.log("Header 3: one of the values is not an integer.")
+                return
+            conv_values = [raw / 65536.0 * 3.3 for raw in raw_values]
+            self.app.update_dac(conv_values)
         else:
             self.app.log(f"Unrecognized data: {line}")
 
@@ -191,6 +229,25 @@ class EyeVoltMCPServer:
                         },
                         "required": ["name"]
                     }
+                ),
+                Tool(
+                    name="set_voltage",
+                    description="Set the output voltage of a DAC generation channel (0-7). "
+                                "Voltage is in volts over the 0-3.3 V range.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "channel": {
+                                "type": "integer",
+                                "description": "DAC channel index (0-7)"
+                            },
+                            "voltage": {
+                                "type": "number",
+                                "description": "Target voltage in volts (0-3.3)"
+                            }
+                        },
+                        "required": ["channel", "voltage"]
+                    }
                 )
             ]
 
@@ -242,7 +299,27 @@ class EyeVoltMCPServer:
                         return [TextContent(type="text", text=json.dumps(history))]
                 self.log(f"Error: Channel '{channel_name}' not found")
                 return [TextContent(type="text", text=f"Error: Channel '{channel_name}' not found")]
-            
+
+            elif name == "set_voltage":
+                channel = arguments.get("channel", -1)
+                voltage = arguments.get("voltage", 0.0)
+                if not isinstance(channel, int) or channel < 0 or channel >= 8:
+                    self.log(f"Error: Invalid DAC channel {channel}")
+                    return [TextContent(type="text", text=f"Error: DAC channel must be 0-7")]
+                try:
+                    voltage = float(voltage)
+                except (TypeError, ValueError):
+                    return [TextContent(type="text", text="Error: voltage must be a number")]
+                if voltage < 0 or voltage > 3.3:
+                    return [TextContent(type="text", text="Error: voltage must be 0-3.3 V")]
+                millivolts = round(voltage * 1000)
+                sent = self.app.send_command(f"SETMV {channel} {millivolts}")
+                if not sent:
+                    return [TextContent(type="text", text="Error: serial connection not available")]
+                self.log(f"Set DAC{channel} to {voltage:.3f} V ({millivolts} mV)")
+                return [TextContent(type="text",
+                                    text=f"Set DAC{channel} to {voltage:.3f} V ({millivolts} mV)")]
+
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
     def create_app(self):
@@ -280,6 +357,22 @@ class SerialTUI(App):
         grid-size: 3 4;
         align: center middle;
     }
+    #dac_section {
+        dock: bottom;
+        height: 4;
+        border-top: solid $primary;
+        padding: 0 1;
+    }
+    #dac_title {
+        height: 1;
+        text-style: bold;
+    }
+    #dac_grid {
+        layout: grid;
+        grid-size: 4 2;
+        height: 2;
+        align: center middle;
+    }
     Sparkline {
         min-height: 4;
     }
@@ -295,6 +388,10 @@ class SerialTUI(App):
         self.history_limit = history_limit
         self.current_values = [0.0] * 12
         self.displays = []
+        self.dac_values = [0.0] * 8
+        self.dac_displays = []
+        self.serial_protocol: SerialProtocol | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self.mcp_enabled = mcp_enabled
         self.mcp_host = mcp_host
         self.mcp_port = mcp_port
@@ -311,10 +408,16 @@ class SerialTUI(App):
                 history_limit=self.history_limit,
                 id=f"voltage_{i}"
             )
+        with Vertical(id="dac_section"):
+            yield Label("DAC readback", id="dac_title")
+            with Vertical(id="dac_grid"):
+                for i in range(8):
+                    yield DacDisplay(f"DAC{i}", i, id=f"dac_{i}")
 
     async def on_mount(self) -> None:
         self.log(f"Mounting TUI with serial port: {self.serial_port}")
         self.displays = [self.query_one(f"#voltage_{i}", VoltageDisplay) for i in range(12)]
+        self.dac_displays = [self.query_one(f"#dac_{i}", DacDisplay) for i in range(8)]
         asyncio.create_task(self.read_serial())
         
         if self.mcp_enabled:
@@ -334,6 +437,7 @@ class SerialTUI(App):
 
     async def read_serial(self):
         loop = asyncio.get_running_loop()
+        self._loop = loop
         self.log("Opening serial connection...")
         try:
             transport, protocol = await serial_asyncio.create_serial_connection(
@@ -342,14 +446,34 @@ class SerialTUI(App):
                 self.serial_port,
                 baudrate=9600,
             )
+            self.serial_protocol = protocol
             self.log("Serial connection running.")
         except Exception as e:
             self.log(f"Failed to open serial port: {e}")
+
+    def send_command(self, command: str) -> bool:
+        """Thread-safe send of an ASCII command to the Pico over serial.
+
+        Returns True if the command was scheduled, False if no serial
+        connection is available.
+        """
+        if (self._loop is None or self.serial_protocol is None
+                or self.serial_protocol.transport is None):
+            return False
+        data = (command + "\n").encode("ascii")
+        self._loop.call_soon_threadsafe(self.serial_protocol.transport.write, data)
+        return True
 
     def update_values(self, indices, new_values):
         for idx, val in zip(indices, new_values):
             self.current_values[idx] = val
             self.displays[idx].update_value(val)
+        self.refresh()
+
+    def update_dac(self, new_values):
+        for i, val in enumerate(new_values):
+            self.dac_values[i] = val
+            self.dac_displays[i].update_value(val)
         self.refresh()
 
 

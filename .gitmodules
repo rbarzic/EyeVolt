@@ -1,3 +1,6 @@
 [submodule "hw/pcb/imported/KiCad-RP-Pico"]
 	path = hw/pcb/imported/KiCad-RP-Pico
 	url = https://github.com/rbarzic/KiCad-RP-Pico.git
+[submodule "sw/pico/imported/pico-bootstrap"]
+	path = sw/pico/imported/pico-bootstrap
+	url = https://github.com/rbarzic/pico-bootstrap.git
