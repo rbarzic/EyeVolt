@@ -43,7 +43,14 @@ time.sleep(0.2); s.reset_input_buffer(); s.write(b'$(1)\n'); s.flush(); \
  if l.strip().startswith(b'$(2)')]; s.close()"
 endef
 
-.PHONY: help preview bin play loop stop off clean
+# VCORE (CH2) trim voltage in millivolts, applied by `make vcore` after a run.
+VCORE_MV ?= 1100
+VCORE_MV2 ?= 1000
+VCORE_MV3 ?= 900
+
+VIO_MV ?= 1800
+
+.PHONY: help preview bin play loop stop off vcore clean
 help:
 	@echo "Polaris power-up sequence demo (port: $(PORT), T = 400 * $(STEP_US)us = $$(( 400 * $(STEP_US) / 1000 ))ms)"
 	@echo "  make preview   show per-channel summary (no hardware)"
@@ -52,8 +59,9 @@ help:
 	@echo "  make loop      upload + play looping"
 	@echo "  make stop      stop playback"
 	@echo "  make off       zero all DAC outputs"
+	@echo "  make vcore     set VCORE (CH2) to $(VCORE_MV) mV (post-run trim)"
 	@echo "  make clean     remove generated files"
-	@echo "  overrides: PORT=/dev/ttyACMx  STEP_US=<200000/400..500000/400>"
+	@echo "  overrides: PORT=/dev/ttyACMx  STEP_US=<200000/400..500000/400>  VCORE_MV=<0..3300>"
 
 preview:
 	@$(CONVERT) $(PWL) --preview
@@ -76,6 +84,18 @@ stop:
 
 off:
 	@$(call send_cmd,OFFALL,OK)
+
+# Trim VCORE (CH2) after the sequence has run and playback has stopped.
+# Default 1100 mV (1.1 V); override with VCORE_MV=... .
+vcore:
+	@$(call send_cmd,SETMV 2 $(VCORE_MV),OK)
+vcore2:
+	@$(call send_cmd,SETMV 2 $(VCORE_MV2),OK)
+vcore3:
+	@$(call send_cmd,SETMV 2 $(VCORE_MV3),OK)
+
+vio:
+	@$(call send_cmd,SETMV 3 $(VIO_MV),OK)
 
 clean:
 	@rm -f $(BIN) $(META)
