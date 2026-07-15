@@ -67,4 +67,12 @@ constexpr unsigned ADC_OVERSAMPLE = 4;
 constexpr unsigned DAC_FULLSCALE_MV = 3300;
 constexpr unsigned DAC_MAX_RAW      = 65535;
 
+// ── Waveform playback ────────────────────────────────────────────────────────
+// Max steps in a loaded waveform. Buffer size = WF_MAX_STEPS * 8 ch * 2 B.
+constexpr unsigned WF_MAX_STEPS         = 2048;   // 32 KB @ 8 channels
+constexpr unsigned WF_DEFAULT_STEP_US   = 1000;   // 1 ms/step → 2.048 s full run
+constexpr unsigned WF_MIN_STEP_US       = 200;    // 5000 steps/s upper bound
+constexpr unsigned WF_MAX_STEP_US       = 100000; // 10 steps/s lower bound
+constexpr unsigned WF_UPLOAD_TIMEOUT_MS = 5000;   // abort a stalled binary upload
+
 }  // namespace pins

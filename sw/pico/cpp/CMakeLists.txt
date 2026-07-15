@@ -13,6 +13,7 @@ add_executable(eyevolt
     src/main.cpp
     src/monitor.cpp
     src/generator.cpp
+    src/waveform.cpp
 )
 
 target_include_directories(eyevolt PRIVATE src)
@@ -33,4 +34,9 @@ pico_add_extra_outputs(eyevolt)
 
 target_compile_definitions(eyevolt PRIVATE
     EYEVOLT_VERSION="2.0-cpp-1.0"
+    # Custom USB-CDC identification (overrides the generic pico-sdk defaults so
+    # the board enumerates as "EyeVolt / EyeVolt 2.0" instead of "Raspberry Pi /
+    # Pico"). VID/PID are left at the SDK defaults (2E8A:000A).
+    USBD_MANUFACTURER="EyeVolt"
+    USBD_PRODUCT="EyeVolt 2.0"
 )
