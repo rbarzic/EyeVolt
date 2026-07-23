@@ -1,0 +1,11 @@
+# EyeVolt waveform example: mixed shapes across three channels.
+#   CH0: triangle ramp 0 -> 3.3 V -> 0
+#   CH1: square wave, 0 <-> 3.3 V every 512 steps
+#   CH3: constant 1.65 V offset
+# Channels 2, 4, 5, 6, 7 are inactive (hold manual value).
+
+STEPS 2048
+
+CH0  0@0  3300@1024  0@2047
+CH1  0@0  0@511  3300@512  3300@1023  0@1024  0@1535  3300@1536  3300@2047
+CH3  1650@0  1650@2047

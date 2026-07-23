@@ -73,10 +73,55 @@ the current PC software.
 | `SETMV <ch> <mv>` | Set DAC channel `ch` (0-7) to `mv` millivolts (0-3300) | `OK DAC<ch>=<mv>mV` |
 | `OFF <ch>` | Set DAC channel `ch` (0-7) to 0 V | `OK DAC<ch>=0` |
 | `OFFALL` | All DAC channels to 0 V | `OK all DAC=0` |
+| `WFLOAD <nsteps> <mask_hex>` | Upload a binary waveform (see below) | `WFREADY <nbytes>` then `OK WFLOADED 0x<checksum>` |
+| `WFPLAY [loop=0] [step_us=1000]` | Play the loaded waveform | `OK PLAYING nsteps=.. mask=.. loop=.. step_us=..` |
+| `WFSTOP` | Stop playback (DACs hold last values) | `OK STOPPED step=<n>` |
+| `WFSTATUS` | Query playback state | `WFSTAT <state> <step> <nsteps> <mask>` |
 | `VERSION` | Print firmware version | `VERSION <ver>` |
 | `HELP` | List commands | (help text) |
 
 Errors reply `ERROR ...`. Commands are uppercase.
+
+---
+
+## Waveform playback
+
+Upload a pre-computed waveform (8 channels × up to 2048 steps × 16-bit) into
+Pico SRAM and play it back at a fixed step rate (default 1 ms/step → 2.048 s for
+a full 2048-step run). A hardware repeating timer writes each step's active
+channels to the PWM registers in IRQ context, so monitoring (`1::`/`2::`) keeps
+running during playback. The `3::` readback frame is suppressed while playing.
+
+Channels are marked **active** or **inactive** via the mask. Inactive channels
+are never touched by playback — they hold whatever manual (`SETMV`/`SETDAC`)
+value they had, so you can mix a driven waveform with static offsets.
+
+### `WFLOAD` upload sequence
+
+```
+host → pico : WFLOAD 2048 0xFF\n
+pico → host : WFREADY 32768\n              (nsteps × 8 × 2 bytes expected)
+host → pico : <32768 raw bytes>            uint16 little-endian, step-major
+pico → host : OK WFLOADED 0x0BFF7801\n      (32-bit additive checksum)
+```
+
+Binary layout: `byte_offset = (step × 8 + channel) × 2`, value
+`round(mv / 3300 × 65535)` as little-endian `uint16`. Upload aborts with
+`ERROR timeout (n/N bytes)` after 5 s.
+
+### Host tools (`../tools/`)
+
+```bash
+# 1. Convert a PWL text description to a .bin (+ .meta sidecar with the mask)
+python3 ../tools/pwl_to_waveform.py ../tools/examples/demo.pwl -o demo.bin
+
+# 2. Upload and play (mask read from demo.meta automatically)
+python3 ../tools/wf_upload.py /dev/ttyACM0 demo.bin --play
+python3 ../tools/wf_upload.py /dev/ttyACM0 demo.bin --loop --step-us 500
+```
+
+See `../tools/` for the PWL format and example waveforms under
+`../tools/examples/`.
 
 ---
 

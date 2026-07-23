@@ -1,0 +1,7 @@
+# EyeVolt waveform example: single-channel triangle ramp.
+# CH0 sweeps 0 V -> 3.3 V -> 0 V over the full 2048-step (2.048 s @ 1 ms) run.
+# All other channels are inactive and hold their manual values.
+
+STEPS 2048
+
+CH0  0@0  3300@1024  0@2047

@@ -1,0 +1,36 @@
+# Polaris power-up sequence — matches doc/datasheet .../tester_power_2.pdf
+#
+# Five supply rails are brought up in a staggered sequence. Each rail starts
+# ramping one interval T after the previous one, and every ramp takes T to
+# reach its final value (so equal-voltage rails VMAX/VMAIN have parallel slopes,
+# as drawn). Spec: 200ms < T < 500ms.
+#
+# Here T = 400 steps. Play at step_us=1000 (default) → T = 400 ms, full
+# sequence 2.0 s. Valid range for this file: step_us 500..1250 keeps T in spec.
+#
+#   ramp order   rail    color   final     channel
+#   ----------   ----    -----   -----     -------
+#     1 (t=0)    VULP    purple  670 mV    CH0
+#     2 (t=T)    VMAX    green   3200 mV   CH1
+#     3 (t=2T)   VCORE   black   1200 mV   CH2
+#     4 (t=3T)   VIO     red     1900 mV   CH3
+#     5 (t=4T)   VMAIN   brown   3200 mV   CH4
+#
+# CH5-CH7 are unused (inactive → hold their manual value).
+
+STEPS 2048
+
+# t=0..T : VULP ramps 0 -> 670 mV, then holds
+CH0  0@0  670@400
+
+# t=T..2T : VMAX ramps 0 -> 3200 mV, then holds
+CH1  0@0  0@400  3200@800
+
+# t=2T..3T : VCORE ramps 0 -> 1200 mV, then holds
+CH2  0@0  0@800  1200@1200
+
+# t=3T..4T : VIO ramps 0 -> 1900 mV, then holds
+CH3  0@0  0@1200  1900@1600
+
+# t=4T..5T : VMAIN ramps 0 -> 3200 mV, then holds
+CH4  0@0  0@1600  3200@2000
